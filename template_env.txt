@@ -1,0 +1,3 @@
+PAN_HOST=ip
+PAN_USER=username
+PAN_KEY=api_key
