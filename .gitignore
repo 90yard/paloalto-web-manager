@@ -1,0 +1,19 @@
+# Credentials & Configuration
+.env
+
+# Backups
+backups/
+
+# Python artifacts
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.venv/
+env/
+venv/
+.env/
+
+# OS/System files
+.DS_Store
+Thumbs.db
