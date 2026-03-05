@@ -379,7 +379,7 @@ def check_usage(fw, name):
 
 def list_address_objects(fw):
     """
-    모든 Address Object를 테이블 형식으로 출력
+    모든 Address Object를 테이블 형식으로 출력하고 리스트로 반환
     """
     print(f"[INFO] Fetching Address Objects from {fw.hostname}...")
     try:
@@ -398,25 +398,44 @@ def list_address_objects(fw):
         data.sort(key=lambda x: x[0])
         print_table(headers, data)
         print(f"Total: {len(data)} objects")
+        return data
     except Exception as e:
         print(f"[ERROR] Failed to fetch objects: {e}")
+        return []
 
 
 # -------------------------------------------------------
 # [8] Address Group 생성
 # -------------------------------------------------------
 
-def add_address_group(fw, name, members_input, dry_run=False):
+def add_address_group(fw, name, members_input, append=False, dry_run=False):
     """
-    Static Address Group 생성 (멤버 존재 여부 사전 검토 포함)
+    Static Address Group 생성 또는 수정 (Append 모드 지원)
     """
-    members = []
+    new_members = []
     if os.path.isfile(members_input) and members_input.endswith('.txt'):
         with open(members_input, 'r', encoding='utf-8') as f:
-            members = [line.strip() for line in f if line.strip()]
-        print(f"[INFO] Loaded {len(members)} members from file: {members_input}")
+            new_members = [line.strip() for line in f if line.strip()]
+        print(f"[INFO] Loaded {len(new_members)} members from file: {members_input}")
     else:
-        members = [m.strip() for m in members_input.split(',')]
+        new_members = [m.strip() for m in members_input.split(',')]
+
+    # [Append Mode] 기존 멤버 가져오기
+    final_members = new_members
+    if append:
+        print(f"[INFO] Checking existing members for group '{name}' to append...")
+        try:
+            existing_group = AddressGroup(name=name)
+            fw.add(existing_group)
+            existing_group.refresh()
+            
+            current_members = existing_group.static_value if existing_group.static_value else []
+            # 중복 제거하며 합치기
+            final_members = list(set(current_members + new_members))
+            added_count = len(final_members) - len(current_members)
+            print(f"[INFO] Found {len(current_members)} existing members. Adding {added_count} new unique members.")
+        except PanDeviceError:
+            print(f"[INFO] Group '{name}' does not exist. Creating as a new group.")
 
     # [Safety Check] 멤버 존재 여부 확인
     if not dry_run:
@@ -426,29 +445,30 @@ def add_address_group(fw, name, members_input, dry_run=False):
             existing_objects = AddressObject.refreshall(fw)
             existing_names = [obj.name for obj in existing_objects]
             
-            missing_members = [m for m in members if m not in existing_names]
+            missing_members = [m for m in final_members if m not in existing_names]
             if missing_members:
                 print(f"[ERROR] The following members do not exist: {missing_members}")
-                print("[ABORT] Group creation canceled to prevent commit failure.")
+                print("[ABORT] Group update/creation canceled to prevent commit failure.")
                 return
             print("[OK] All members verified.")
         except Exception as e:
             print(f"[WARNING] Could not verify members: {e} (Proceeding anyway)")
 
     if dry_run:
-        print(f"[DRY-RUN] Would create Address Group: {name}")
-        print(f"          Members ({len(members)}): {members[:5]} ...")
+        msg = "append to" if append else "create/overwrite"
+        print(f"[DRY-RUN] Would {msg} Address Group: {name}")
+        print(f"          Total Members: {len(final_members)}")
         return
 
-    group = AddressGroup(name=name, static_value=members)
+    group = AddressGroup(name=name, static_value=final_members)
     fw.add(group)
     group.create()
-    print(f"[OK] Address Group created: {name} (Total: {len(members)})")
+    print(f"[OK] Address Group '{name}' updated successfully (Total: {len(final_members)})")
 
 
 def list_address_groups(fw):
     """
-    모든 Address Group을 테이블 형식으로 출력
+    모든 Address Group을 테이블 형식으로 출력하고 리스트로 반환
     """
     print(f"[INFO] Fetching Address Groups from {fw.hostname}...")
     try:
@@ -465,14 +485,20 @@ def list_address_groups(fw):
             data.append([
                 g.name,
                 "Static" if g.static_value else "Dynamic",
-                m_str
+                m_str,
+                m_list # 원본 멤버 리스트 추가 반환용
             ])
         
         data.sort(key=lambda x: x[0])
-        print_table(headers, data)
+        
+        # 출력용 데이터 (원본 리스트 제외)
+        display_data = [row[:3] for row in data]
+        print_table(headers, display_data)
         print(f"Total: {len(data)} groups")
+        return data
     except Exception as e:
         print(f"[ERROR] Failed to fetch groups: {e}")
+        return []
 
 
 def delete_address_group(fw, name, dry_run=False):
@@ -506,6 +532,7 @@ def create_or_update_rule(
     application,
     service,
     action,
+    schedule=None,
     dry_run=False
 ):
     """
@@ -526,7 +553,8 @@ def create_or_update_rule(
         destination=[destination],
         application=[application],
         service=[service],
-        action=action
+        action=action,
+        schedule=schedule
     )
 
     fw.add(rule)
@@ -540,12 +568,25 @@ def create_or_update_rule(
 
 def show_globalprotect_users(fw):
     """
-    현재 접속 중인 GlobalProtect 사용자 조회
+    현재 접속 중인 GlobalProtect 사용자 조회하고 결과를 반환
     """
     cmd = "show global-protect-gateway current-user"
-    result = fw.op(cmd)
-    print("[INFO] GlobalProtect Users:")
-    print(result)
+    try:
+        result = fw.op(cmd)
+        print("[INFO] GlobalProtect Users:")
+        print(result)
+        
+        # XML ElementTree인 result를 문자열로 파싱하여 반환
+        import xml.etree.ElementTree as ET
+        if isinstance(result, ET.Element):
+            xml_str = ET.tostring(result, encoding='utf8', method='xml').decode('utf8')
+            return {"xml": xml_str}
+        
+        # 아니면 문자열 그대로 반환
+        return {"raw": str(result)}
+    except Exception as e:
+        print(f"[ERROR] Failed to fetch GP users: {e}")
+        return {"error": str(e)}
 
 def logout_globalprotect_user(fw, username, dry_run=False):
     """
@@ -655,9 +696,10 @@ def main():
     subparsers.add_parser("list-address", parents=[base_parser], help="List all Address Objects in table format")
 
     # [Add Group]
-    grp = subparsers.add_parser("add-group", parents=[action_parser], help="Create an Address Group")
+    grp = subparsers.add_parser("add-group", parents=[action_parser], help="Create/Update an Address Group")
     grp.add_argument("--name", required=True)
     grp.add_argument("--members", required=True, help="Comma-separated list or .txt file path")
+    grp.add_argument("--append", action="store_true", help="Append members to existing group instead of overwriting")
     
     # [Delete Address]
     del_addr = subparsers.add_parser("del-address", parents=[action_parser], help="Delete Address Object(s)")
@@ -685,6 +727,7 @@ def main():
     rule.add_argument("--application", required=True)
     rule.add_argument("--service", required=True)
     rule.add_argument("--action", required=True)
+    rule.add_argument("--schedule", help="Name of the schedule object")
 
     # [GP Users]
     subparsers.add_parser("gp-users", parents=[base_parser], help="List active GP users")
@@ -732,7 +775,7 @@ def main():
             list_address_objects(fw)
 
         elif args.command == "add-group":
-            add_address_group(fw, args.name, args.members, getattr(args, 'dry_run', False))
+            add_address_group(fw, args.name, args.members, args.append, getattr(args, 'dry_run', False))
 
         elif args.command == "list-group":
             list_address_groups(fw)
@@ -760,6 +803,7 @@ def main():
                 args.application,
                 args.service,
                 args.action,
+                args.schedule,
                 getattr(args, 'dry_run', False)
             )
 

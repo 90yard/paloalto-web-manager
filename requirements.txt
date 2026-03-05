@@ -1,0 +1,5 @@
+fastapi
+uvicorn[standard]
+pan-os-python
+pan-python
+python-multipart

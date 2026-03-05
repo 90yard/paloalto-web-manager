@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="ko">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PAN-OS Web</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+
+<body>
+    <!-- Sidebar -->
+    <aside class="sidebar">
+        <div class="logo">
+            <div class="logo-icon"></div>
+            <h2>PAN-OS Web</h2>
+        </div>
+
+        <nav class="nav-menu">
+            <button class="nav-btn active" data-target="tab-connect">설정 연결</button>
+            <button class="nav-btn" data-target="tab-address">Address 객체</button>
+            <button class="nav-btn" data-target="tab-group">Address 그룹</button>
+        </nav>
+
+        <div class="sidebar-footer">
+            <div id="authStatus" class="status-badge disconnected">연결 끊김</div>
+            <div style="margin-top:15px;" class="commit-section">
+                <label class="checkbox-label"
+                    style="display:flex; justify-content:flex-start; margin-bottom:10px; color:#94a3b8; font-size:0.9rem;">
+                    <input type="checkbox" id="partialCommit" style="width:auto; margin-right:8px;"> Partial Commit
+                </label>
+                <button id="btnCommit" class="btn btn-warning" style="width:100%;">Commit 적용</button>
+                <div id="commitOutput" class="hidden mt-4" style="font-size:0.8rem;"></div>
+            </div>
+        </div>
+    </aside>
+
+    <!-- Main Content -->
+    <main class="content-area">
+        <!-- Loader Overlay -->
+        <div id="loader" class="loader-overlay hidden">
+            <div class="spinner"></div>
+            <p>처리 중...</p>
+        </div>
+
+        <!-- TAB: Connect -->
+        <section id="tab-connect" class="tab-content active">
+            <header class="content-header">
+                <h1>방화벽 연결</h1>
+                <p>방화벽 관리를 시작하려면 인증 정보를 입력해 주세요.</p>
+            </header>
+
+            <div class="wrapper">
+                <div class="card glass-card">
+                    <h3 class="card-title">인증 정보</h3>
+                    <p class="subtitle">아래에 접속 정보를 입력하세요.</p>
+
+                    <form id="connectForm" class="form-grid">
+                        <div class="input-group">
+                            <label>Hostname / IP</label>
+                            <input type="text" id="host" required placeholder="예: 192.168.1.1">
+                        </div>
+                        <div class="input-group">
+                            <label>사용자 이름 (Username)</label>
+                            <input type="text" id="username" placeholder="admin">
+                        </div>
+                        <div class="input-group">
+                            <label>비밀번호 (Password)</label>
+                            <input type="password" id="password" placeholder="••••••••">
+                        </div>
+                        <div class="input-group">
+                            <label>API Key (선택 사항)</label>
+                            <input type="text" id="api_key" placeholder="LUFRPT1...">
+                        </div>
+                        <div class="form-actions">
+                            <button type="submit" class="btn btn-primary mt-4">접속 확인 및 연결</button>
+                        </div>
+                    </form>
+
+                    <div id="connectAlert" class="hidden mt-4"></div>
+                </div>
+            </div>
+        </section>
+        </section>
+
+        <!-- TAB: Address Objects -->
+        <section id="tab-address" class="tab-content hidden">
+            <header class="content-header"
+                style="display: flex; justify-content: space-between; align-items: flex-end;">
+                <div>
+                    <h1>Address 객체</h1>
+                    <p>등록된 주소 객체 목록을 확인하고 새 객체를 룰에 추가합니다.</p>
+                </div>
+                <div style="display:flex; gap:10px; align-items:center;">
+                    <input type="text" id="addressSearch" placeholder="객체 이름 또는 주소 검색..."
+                        style="width: 220px; padding: 0.5rem 1rem; border-radius: var(--radius-md); border: 1px solid var(--border-color); background: rgba(0,0,0,0.2); color: var(--text-primary);">
+                    <button id="btnRefreshAddr" class="btn btn-secondary">새로고침</button>
+                </div>
+            </header>
+
+            <div class="wrapper">
+
+                <!-- 단건 수동 등록 패널 -->
+                <div class="card panel" style="margin-bottom: 1.5rem;">
+                    <div class="panel-header">
+                        <h3>Address 객체 추가</h3>
+                    </div>
+                    <div class="expandable-form">
+                        <form id="addAddrForm" class="form-grid compact">
+                            <div class="input-group">
+                                <label for="addrName">이름 (Name)</label>
+                                <input type="text" id="addrName" placeholder="예: Server-Web-01" required>
+                            </div>
+                            <div class="input-group">
+                                <label for="addrValue">주소 (Value)</label>
+                                <input type="text" id="addrValue" placeholder="예: 192.168.1.10/32" required>
+                            </div>
+                            <div class="input-group">
+                                <label for="addrType">유형 (Type)</label>
+                                <select id="addrType">
+                                    <option value="ip-netmask">ip-netmask</option>
+                                    <option value="ip-range">ip-range</option>
+                                    <option value="fqdn">fqdn</option>
+                                    <option value="ip-wildcard">ip-wildcard</option>
+                                </select>
+                            </div>
+                            <div class="input-group">
+                                <label for="addrDesc">설명 (Description)</label>
+                                <input type="text" id="addrDesc" placeholder="선택 사항">
+                            </div>
+                            <div class="form-actions" style="grid-column: span 4;">
+                                <button type="submit" class="btn btn-primary">추가</button>
+                            </div>
+                        </form>
+                        <div id="addAddrResult" class="hidden"></div>
+                    </div>
+                </div>
+
+                <!-- CSV 일괄 등록 패널 -->
+                <div class="card panel" style="margin-bottom: 1.5rem;">
+                    <div class="panel-header">
+                        <h3>CSV 일괄 등록</h3>
+                    </div>
+                    <div id="bulkSection" class="expandable-form">
+                        <p style="color: var(--text-secondary); font-size: 0.875rem; margin-bottom: 1.5rem;">
+                            CSV 형식: <code style="background: rgba(0,0,0,0.3); padding: 2px 6px; border-radius: 4px; font-size: 0.8rem;">name, value, type(선택), description(선택)</code> — 최대 500행, 1MB
+                        </p>
+                        <input type="file" id="bulkFile" accept=".csv" style="display: none;">
+                        <div class="form-actions" style="margin-bottom: 1.5rem;">
+                            <label for="bulkFile" class="btn btn-secondary" style="cursor: pointer;">파일 선택</label>
+                            <span id="bulkFileName" style="color: var(--text-secondary); font-size: 0.875rem; font-style: italic;">선택된 파일 없음</span>
+                        </div>
+                        <div class="form-actions">
+                            <button id="btnBulkUpload" class="btn btn-primary">일괄 등록</button>
+                        </div>
+                        <div id="bulkResult" class="hidden"></div>
+                    </div>
+                </div>
+
+                <div class="card panel">
+                    <div class="table-container">
+                        <table class="data-table" id="addressTable">
+                            <thead>
+                                <tr>
+                                    <th>이름 (Name)</th>
+                                    <th>주소 (Value)</th>
+                                    <th>유형 (Type)</th>
+                                    <th>설명 (Description)</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <!-- Data injected via JS -->
+                            </tbody>
+                        </table>
+                    </div>
+                    <div id="paginationControls" class="hidden"
+                        style="display:flex; justify-content:space-between; align-items:center; margin-top:1.5rem; padding: 0 1rem;">
+                        <button id="btnPrevPageAddr" class="btn btn-secondary" style="width: 100px;">&laquo; 이전</button>
+                        <span id="pageNumDisplay" style="color: var(--text-secondary); font-weight:500;">1 / 1</span>
+                        <button id="btnNextPageAddr" class="btn btn-secondary" style="width: 100px;">다음 &raquo;</button>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- TAB: Address Groups -->
+        <section id="tab-group" class="tab-content hidden">
+            <header class="content-header"
+                style="display: flex; justify-content: space-between; align-items: flex-end;">
+                <div>
+                    <h1>Address 그룹</h1>
+                    <p>정의된 주소 그룹 목록을 확인합니다.</p>
+                </div>
+                <div style="display:flex; gap:10px; align-items:center;">
+                    <input type="text" id="groupSearch" placeholder="그룹 이름 필터링..."
+                        style="width: 220px; padding: 0.5rem 1rem; border-radius: var(--radius-md); border: 1px solid var(--border-color); background: rgba(0,0,0,0.2); color: var(--text-primary);">
+                    <button id="btnRefreshGroups" class="btn btn-secondary">새로고침</button>
+                </div>
+            </header>
+
+            <div class="wrapper">
+                <div class="card panel">
+                    <div class="table-container">
+                        <table class="data-table" id="groupTable">
+                            <thead>
+                                <tr>
+                                    <th>그룹 이름 (Group Name)</th>
+                                    <th>유형 (Type)</th>
+                                    <th>포함 객체 (Members)</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                            </tbody>
+                        </table>
+                    </div>
+                    <div id="paginationControlsGroup" class="hidden"
+                        style="display:flex; justify-content:space-between; align-items:center; margin-top:1.5rem; padding: 0 1rem;">
+                        <button id="btnPrevPageGroup" class="btn btn-secondary" style="width: 100px;">&laquo;
+                            이전</button>
+                        <span id="pageNumDisplayGroup" style="color: var(--text-secondary); font-weight:500;">1 /
+                            1</span>
+                        <button id="btnNextPageGroup" class="btn btn-secondary" style="width: 100px;">다음
+                            &raquo;</button>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+    </main>
+    <script src="/static/script.js"></script>
+</body>
+
+</html>
